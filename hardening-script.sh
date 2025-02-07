@@ -1,6 +1,125 @@
 #!/bin/bash
 set -euo pipefail
 
+############################################################
+#                                                          #
+#                System Hardening Script                   #
+#                                                          #
+############################################################
+
+# Author: b3fruky
+# Date: 30/12/2024
+# Version: 1.1
+
+# Description:
+# This script is designed to automate the process of hardening a Linux system by applying
+# a series of security best practices. It is intended for educational purposes and as a
+# starting point for securing Linux environments. The script performs tasks such as:
+# - Updating the system and removing obsolete packages
+# - Applying kernel security parameters
+# - Disabling unnecessary services
+# - Hardening SSH and firewall configurations
+# - Enforcing strong password policies
+# - Running a Lynis security audit before and after hardening
+
+# About Me:
+# I am a cybersecurity student with a passion for system security and automation. This project
+# was born out of my curiosity and desire to learn more about Linux hardening techniques. While
+# I have put significant effort into creating this script, I recognize that there is always room
+# for improvement. If you find this script useful or have suggestions for enhancements, please
+# feel free to contribute!
+
+# How to Use:
+# 1. Run the script as root: sudo ./system_hardening.sh
+# 2. Follow the on-screen prompts to confirm or skip each hardening step.
+# 3. Review the logs at /var/log/system_hardening.log for details on the changes made.
+# 4. After the script completes, reboot the system for all changes to take effect.
+
+# Disclaimer:
+# This script is provided "as-is" without any warranties. Use it at your own risk. I am not
+# responsible for any damage or issues caused by running this script. Always test in a safe
+# environment before deploying to production systems.
+
+# Contribution:
+# If you are interested in improving this script, feel free to fork the repository and submit
+# pull requests. Your contributions are welcome! Together, we can make this tool even better.
+
+############################################################
+#                                                          #
+#                   Let's Get Started!                     #
+#                                                          #
+############################################################
+
+# Initialize variables
+TOTAL_STEPS=7
+CURRENT_STEP=0
+
+# Function to display the introduction in color
+display_introduction() {
+    # Define colors
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+
+    echo -e "${GREEN}############################################################${NC}"
+    echo -e "${GREEN}#                                                          #${NC}"
+    echo -e "${GREEN}#                ${YELLOW}System Hardening Script${GREEN}                   #${NC}"
+    echo -e "${GREEN}#                                                          #${NC}"
+    echo -e "${GREEN}############################################################${NC}"
+    echo -e ""
+    echo -e "${BLUE}Author:${NC} b3fruky"
+    echo -e "${BLUE}Date:${NC} sometime today"
+    echo -e "${BLUE}Version:${NC} 1.1"
+    echo -e ""
+    echo -e "${YELLOW}Description:${NC}"
+    echo -e "This script is designed to automate the process of hardening a Linux system by applying"
+    echo -e "a series of security best practices. It is intended for educational purposes and as a"
+    echo -e "starting point for securing Linux environments. The script performs tasks such as:"
+    echo -e "- Updating the system and removing obsolete packages"
+    echo -e "- Applying kernel security parameters"
+    echo -e "- Disabling unnecessary services"
+    echo -e "- Hardening SSH and firewall configurations"
+    echo -e "- Enforcing strong password policies"
+    echo -e "- Running a Lynis security audit before and after hardening"
+    echo -e ""
+    echo -e "${YELLOW}About Me:${NC}"
+    echo -e "I am a cybersecurity student with a passion for system security and automation. This project"
+    echo -e "was born out of my curiosity and desire to learn more about Linux hardening techniques. While"
+    echo -e "I have put significant effort into creating this script, I recognize that there is always room"
+    echo -e "for improvement. If you find this script useful or have suggestions for enhancements, please"
+    echo -e "feel free to contribute!"
+    echo -e ""
+    echo -e "${YELLOW}How to Use:${NC}"
+    echo -e "1. Run the script as root: sudo ./system_hardening.sh"
+    echo -e "2. Follow the on-screen prompts to confirm or skip each hardening step."
+    echo -e "3. Review the logs at /var/log/system_hardening.log for details on the changes made."
+    echo -e "4. After the script completes, reboot the system for all changes to take effect."
+    echo -e ""
+    echo -e "${YELLOW}Disclaimer:${NC}"
+    echo -e "This script is provided \"as-is\" without any warranties. Use it at your own risk. I am not"
+    echo -e "responsible for any damage or issues caused by running this script. Always test in a safe"
+    echo -e "environment before deploying to production systems."
+    echo -e ""
+    echo -e "${YELLOW}Contribution:${NC}"
+    echo -e "If you are interested in improving this script, feel free to fork the repository and submit"
+    echo -e "pull requests. Your contributions are welcome! Together, we can make this tool even better."
+    echo -e ""
+    echo -e "${GREEN}############################################################${NC}"
+    echo -e "${GREEN}#                                                          #${NC}"
+    echo -e "${GREEN}#                   ${YELLOW}Let's Get Started!${GREEN}                     #${NC}"
+    echo -e "${GREEN}#                                                          #${NC}"
+    echo -e "${GREEN}############################################################${NC}"
+    echo -e ""
+
+    # Call to action
+    read -p "Press [Enter] to continue or [Ctrl+C] to exit: " -r
+    echo -e ""
+}
+
+
+# Function to detect package manager
 detect_package_manager() {
     if command -v apt-get >/dev/null; then
         echo "apt"
@@ -18,64 +137,61 @@ detect_package_manager() {
     fi
 }
 
+# Function to install a package with error handling
 install_package() {
     local package=$1
     local pkg_manager=$(detect_package_manager)
     
     case $pkg_manager in
         apt)
-            apt-get install -y $package
+            if ! apt-get install -y "$package"; then
+                log_action "Failed to install $package using apt"
+                return 1
+            fi
             ;;
         dnf|yum)
-            $pkg_manager install -y $package
+            if ! $pkg_manager install -y "$package"; then
+                log_action "Failed to install $package using $pkg_manager"
+                return 1
+            fi
             ;;
         pacman)
-            pacman -S --noconfirm $package
+            if ! pacman -S --noconfirm "$package"; then
+                log_action "Failed to install $package using pacman"
+                return 1
+            fi
             ;;
         zypper)
-            zypper install -y $package
+            if ! zypper install -y "$package"; then
+                log_action "Failed to install $package using zypper"
+                return 1
+            fi
             ;;
     esac
 }
 
-system_update() {
-    local pkg_manager=$(detect_package_manager)
-    
-    case $pkg_manager in
-        apt)
-            apt-get update && apt-get upgrade -y
-            ;;
-        dnf|yum)
-            $pkg_manager update -y
-            ;;
-        pacman)
-            pacman -Syu --noconfirm
-            ;;
-        zypper)
-            zypper update -y
-            ;;
-    esac
-}
-set -euo pipefail
-
+# Function to print a progress bar
 print_progress_bar() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
     local progress=$1
     local total=$2
-    local width=50
+    local width=$(tput cols)  # Get the full width of the terminal
+    width=$((width - 15))     # Reduce width to account for brackets and percentage
     local percentage=$((progress * 100 / total))
     local completed=$((width * progress / total))
     local remaining=$((width - completed))
 
-    printf "\r["
+    printf "\r[#] - ["
     printf "%*s" "$completed" | tr ' ' '='
     printf "%*s" "$remaining" | tr ' ' ' '
-    printf "] %3d%% Complete" "$percentage"
+    printf "] %3d%%" "$percentage"
 }
 
+# Function to confirm an action with the user
 confirm_action() {
     local message="$1"
     local explanation="$2"
-    
+
     echo -e "\n[HARDENING STEP] $message"
     echo -e "\nIMPLICATIONS:"
     echo "$explanation"
@@ -97,15 +213,12 @@ confirm_action() {
     done
 }
 
-TOTAL_STEPS=8
-CURRENT_STEP=0
-
+# Function to log actions
 log_action() {
-    CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/system_hardening.log
-    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
+# Function to perform system updates
 system_update() {
     if confirm_action "System Package Update" \
     "This step will:
@@ -113,7 +226,6 @@ system_update() {
     - Remove obsolete packages
     - Potentially restart services"; then
         log_action "Performing system package update"
-        
         for i in {1..5}; do
             if apt-get update && apt-get upgrade -y && apt-get autoremove -y && apt-get autoclean; then
                 break
@@ -124,7 +236,10 @@ system_update() {
             fi
         done
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
+
+# Function to enhance security settings
 enhance_security() {
     if confirm_action "Enhanced Security Configuration" "This step will:
     - Apply kernel security parameters
@@ -133,7 +248,7 @@ enhance_security() {
     - Remove potentially vulnerable packages"; then
         log_action "Applying enhanced security configuration"
 
-        # Append security parameters to /etc/sysctl.conf without echoing to terminal
+        # Append security parameters to /etc/sysctl.conf
         {
         echo "kernel.randomize_va_space=2"
         echo "kernel.kptr_restrict=2"
@@ -172,10 +287,11 @@ enhance_security() {
         echo "net.ipv4.tcp_max_syn_backlog=2048"
         echo "net.ipv4.tcp_synack_retries=2"
         echo "net.ipv4.tcp_syn_retries=5"
-        } >> /etc/sysctl.conf 2>/dev/null
+        } > /etc/sysctl.conf 2>/dev/null
 
         sysctl -p 2>/dev/null
 
+        # Disable unnecessary services
         services_to_disable=(
             "avahi-daemon"
             "cups"
@@ -191,7 +307,7 @@ enhance_security() {
             systemctl disable --now "$service" &>/dev/null || true
         done
 
-        # Distribution-specific package removal
+        # Remove potentially vulnerable packages
         pkg_manager=$(detect_package_manager 2>/dev/null)
         case $pkg_manager in
             apt)
@@ -212,10 +328,10 @@ enhance_security() {
             remove_package "$package" &>/dev/null
         done
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
-# Ensure that confirm_action, log_action, detect_package_manager, and remove_package are defined
-
+# Function to remove a package
 remove_package() {
     local package=$1
     local pkg_manager=$(detect_package_manager)
@@ -235,6 +351,8 @@ remove_package() {
             ;;
     esac
 }
+
+# Function to harden file permissions
 file_permission_hardening() {
     if confirm_action "File Permission Hardening" \
     "This step will:
@@ -251,13 +369,10 @@ file_permission_hardening() {
         chmod 644 /etc/group
         chmod 600 /etc/gshadow
 
-        directories="/home /tmp"
+        directories="/home /tmp /var/tmp"
         find $directories -type f -perm /6000 -exec sh -c '
-            echo "Checking SUID/SGID file: {}"
-            if ! echo "{}" | grep -q "^/usr/bin/sudo\|^/usr/bin/su\|^/usr/bin/ping\|^/usr/bin/passwd$"; then
-                echo "Removing SUID/SGID from: {}"
-                chmod u-s,g-s "{}"
-            fi
+            echo "Removing SUID/SGID from: {}"
+            chmod u-s,g-s "{}"
         ' \; 2>/dev/null || true
 
         find / -nouser -o -nogroup -exec sh -c '
@@ -266,8 +381,10 @@ file_permission_hardening() {
             rm -f "{}"
         ' \; 2>/dev/null || true
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
+# Function to install and configure SELinux
 install_selinux() {
     if confirm_action "SELinux Installation" \
     "This step will:
@@ -303,9 +420,10 @@ install_selinux() {
 
         echo "SELinux has been activated. Please reboot your system to complete the process."
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
-
+# Function to harden SSH configuration
 ssh_hardening() {
     if confirm_action "SSH Hardening" \
     "This step will:
@@ -342,8 +460,10 @@ EOF
 
         systemctl restart ssh
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
+# Function to configure the firewall
 configure_firewall() {
     if confirm_action "Firewall Configuration" \
     "This step will:
@@ -363,24 +483,41 @@ configure_firewall() {
         ufw allow ssh
         ufw --force enable
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
-
 run_lynis() {
     local output_file=$1
 
     if confirm_action "Run Lynis Audit" \
     "This will run the Lynis security audit, which may take some time.
     Do you want to continue?" ; then
-        # Clone Lynis if not already cloned
-        if [ ! -d ./lynis ]; then
-            git clone https://github.com/CISOfy/lynis
+        # Check if Lynis is already installed system-wide
+        if command -v lynis &>/dev/null; then
+            echo "Lynis is already installed system-wide. Running audit..."
+            lynis audit system --quick > "$output_file" 2>&1
+        else
+            echo "Lynis not found system-wide. Checking for local installation..."
+            # Check if the lynis directory exists and contains the executable
+            if [ -f "./lynis/lynis" ]; then
+                echo "Using existing Lynis installation in ./lynis..."
+                ./lynis/lynis audit system --quick > "$output_file" 2>&1
+            else
+                echo "Lynis not found locally. Cloning repository..."
+                # Clone the Lynis repository
+                git clone https://github.com/CISOfy/lynis
+
+                if [ -f "./lynis/lynis" ]; then
+                    echo "Running Lynis audit..."
+                    ./lynis/lynis audit system --quick > "$output_file" 2>&1
+                else
+                    echo "Failed to find or clone Lynis. Please check the repository."
+                    return 1
+                fi
+            fi
         fi
-        echo -e "This might take a few moments... Please be Patient!"
-        # Run Lynis and save output to the file
-        (cd lynis && ./lynis audit system --quick > "$output_file" 2>&1)
     fi
 }
-
+# Function to enforce password policy
 password_policy() {
     if confirm_action "Password Policy Enforcement" \
     "This step will:
@@ -399,10 +536,13 @@ password_policy() {
             chage --maxdays 90 --mindays 7 --warndays 14 "$user" 2>/dev/null || true
         done
     fi
+    print_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS"
 }
 
-
+# Main function
 main() {
+	# Display the introduction
+    display_introduction
     if [[ $EUID -ne 0 ]]; then
         echo "This script must be run as root"
         exit 1
@@ -413,7 +553,9 @@ main() {
         echo "Unsupported package manager"
         exit 1
     fi
+
     mkdir -p /var/log
+	
     run_lynis "/tmp/lynis_initial.log"
     system_update
     enhance_security
@@ -423,9 +565,9 @@ main() {
     configure_firewall
     password_policy
     run_lynis "/tmp/lynis_final.log"
-    
+
     echo -e "\nSystem hardening complete! Review logs at /var/log/system_hardening.log"
-     read -p "System reboot recommended. Do you want to reboot now? (y/n): " answer
+    read -p "System reboot recommended. Do you want to reboot now? (y/n): " answer
     case $answer in
         [yY]|[yY][eE][sS])
             echo "Rebooting the system..."
@@ -435,8 +577,9 @@ main() {
             echo "Reboot canceled."
             ;;
     esac
-    echo -e "We have stored your first audit before the hardening script in /tmp/lynis_initial.log\n and the result is in /tmp/lynis_initial.log\n NOTE : TO GET THE BEST RESULTS please reboot."
+    echo -e "We have stored your first audit before the hardening script in /tmp/lynis_initial.log\n and the result is in /tmp/lynis_final.log\n NOTE : TO GET THE BEST RESULTS please reboot."
     rm -rf lynis
 }
 
+# Execute the main function
 main
